@@ -14,9 +14,10 @@ import (
 
 func main() {
 	port := flag.Int("port", 8443, "The port this proxy should listen to")
-	importantURLFile := flag.String("important-urls", "./important", "The filye containing the important URLs delimited by newline")
+	importantURLFile := flag.String("important-urls", "./important", "The file containing the important URLs delimited by newline")
 	verbose := flag.Bool("verbose", false, "Whether to verbosely log the proxy")
 	passthrough := flag.Bool("passthrough", false, "Whether to run this proxy as a passthrough proxy")
+	requestOrder := flag.String("request-order", "./request_order", "The file containing the order of the requests.")
 	flag.Parse()
 
 	log.Printf(fmt.Sprintf("Starting proxy on %d\n", *port))
@@ -26,7 +27,7 @@ func main() {
 	var resourceQueue *lowerboundproxy.ResourceQueue
 
 	if !*passthrough {
-		resourceQueue = lowerboundproxy.NewResourceQueue()
+		resourceQueue = lowerboundproxy.NewResourceQueue(*requestOrder)
 		defer func() {
 			resourceQueue.Cleanup()
 		}()
@@ -37,7 +38,10 @@ func main() {
 		}
 	}
 
-	proxyHandler := goproxy.NewProxyHttpServer()
+	proxyHandler, err := goproxy.NewProxyHttpServer()
+	if err != nil {
+		log.Fatalf("failed to create the proxy instance: %v", err)
+	}
 	proxyHandler.Verbose = *verbose
 	proxyHandler.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 	proxyHandler.OnRequest().DoFunc(func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
