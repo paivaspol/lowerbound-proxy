@@ -21,14 +21,20 @@ func main() {
 
 	log.Printf(fmt.Sprintf("Starting proxy on %d\n", *port))
 
-	resourceQueue := lowerboundproxy.NewResourceQueue()
-	defer func() {
-		resourceQueue.Cleanup()
-	}()
+	var importantURLs map[string]bool
+	var err error
+	var resourceQueue *lowerboundproxy.ResourceQueue
 
-	importantURLs, err := getImportantURLs(*importantURLFile)
-	if err != nil {
-		log.Fatalf("failed to get important URLs: %v", err)
+	if !*passthrough {
+		resourceQueue = lowerboundproxy.NewResourceQueue()
+		defer func() {
+			resourceQueue.Cleanup()
+		}()
+
+		importantURLs, err = getImportantURLs(*importantURLFile)
+		if err != nil {
+			log.Fatalf("failed to get important URLs: %v", err)
+		}
 	}
 
 	proxyHandler := goproxy.NewProxyHttpServer()
