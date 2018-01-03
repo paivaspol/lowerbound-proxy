@@ -25,7 +25,6 @@ func main() {
 	var importantURLs map[string]bool
 	var err error
 	var resourceQueue *lowerboundproxy.ResourceQueue
-
 	if !*passthrough {
 		resourceQueue = lowerboundproxy.NewResourceQueue(*requestOrder)
 		defer func() {
@@ -36,6 +35,13 @@ func main() {
 		if err != nil {
 			log.Fatalf("failed to get important URLs: %v", err)
 		}
+
+		// Initialize the prefetch injector HTTP handle for generating page with prefetches.
+		pi, err := lowerboundproxy.NewPrefetchInjector(importantURLs)
+		if err != nil {
+			log.Fatalf("failed to get important URLs: %v", err)
+		}
+		http.Handle("/prefetch", pi)
 	}
 
 	proxyHandler, err := goproxy.NewProxyHttpServer()
@@ -66,7 +72,12 @@ func main() {
 		<-signalChan
 		return r
 	})
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", *port), proxyHandler))
+	http.Handle("/", proxyHandler)
+
+	server := &http.Server{
+		Addr: fmt.Sprintf(":%d", *port),
+	}
+	log.Fatal(server.ListenAndServe())
 }
 
 // getImportantURLs reads the URLs from the given file. The file is assumed to
