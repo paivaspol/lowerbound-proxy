@@ -14,7 +14,7 @@ import (
 
 func main() {
 	port := flag.Int("port", 8443, "The port this proxy should listen to")
-	importantURLFile := flag.String("important-urls", "./important", "The filye containing the important URLs delimited by newline")
+	importantURLFile := flag.String("important-urls", "./important", "The file containing the important URLs delimited by newline")
 	verbose := flag.Bool("verbose", false, "Whether to verbosely log the proxy")
 	passthrough := flag.Bool("passthrough", false, "Whether to run this proxy as a passthrough proxy")
 	flag.Parse()
@@ -24,7 +24,6 @@ func main() {
 	var importantURLs map[string]bool
 	var err error
 	var resourceQueue *lowerboundproxy.ResourceQueue
-
 	if !*passthrough {
 		resourceQueue = lowerboundproxy.NewResourceQueue()
 		defer func() {
@@ -35,8 +34,16 @@ func main() {
 		if err != nil {
 			log.Fatalf("failed to get important URLs: %v", err)
 		}
+
+		// Initialize the prefetch injector HTTP handle for generating page with prefetches.
+		pi, err := lowerboundproxy.NewPrefetchInjector(importantURLs)
+		if err != nil {
+			log.Fatalf("failed to get important URLs: %v", err)
+		}
+		http.Handle("/prefetch", pi)
 	}
 
+	// Setup the HTTPS proxy.
 	proxyHandler := goproxy.NewProxyHttpServer()
 	proxyHandler.Verbose = *verbose
 	proxyHandler.OnRequest().HandleConnect(goproxy.AlwaysMitm)
@@ -62,7 +69,12 @@ func main() {
 		<-signalChan
 		return r
 	})
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", *port), proxyHandler))
+	http.Handle("/", proxyHandler)
+
+	server := &http.Server{
+		Addr: fmt.Sprintf(":%d", *port),
+	}
+	log.Fatal(server.ListenAndServe())
 }
 
 // getImportantURLs reads the URLs from the given file. The file is assumed to
