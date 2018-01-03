@@ -45,6 +45,7 @@ func NewResourceQueue(requestOrderFile string) (*ResourceQueue, error) {
 	rq := &ResourceQueue{
 		highPriority:      []chan bool{},
 		lowPriority:       make(map[int]chan bool),
+		reqIDURLMap:       make(map[int]string),
 		nextLowPriorityID: 0,
 		nextRequestID:     0,
 		requestOrder:      requestOrder,

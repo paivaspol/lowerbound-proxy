@@ -35,13 +35,6 @@ func main() {
 		if err != nil {
 			log.Fatalf("failed to get important URLs: %v", err)
 		}
-
-		// Initialize the prefetch injector HTTP handle for generating page with prefetches.
-		pi, err := lowerboundproxy.NewPrefetchInjector(importantURLs)
-		if err != nil {
-			log.Fatalf("failed to get important URLs: %v", err)
-		}
-		http.Handle("/prefetch", pi)
 	}
 
 	proxyHandler, err := goproxy.NewProxyHttpServer()
@@ -72,12 +65,7 @@ func main() {
 		<-signalChan
 		return r
 	})
-	http.Handle("/", proxyHandler)
-
-	server := &http.Server{
-		Addr: fmt.Sprintf(":%d", *port),
-	}
-	log.Fatal(server.ListenAndServe())
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", *port), proxyHandler))
 }
 
 // getImportantURLs reads the URLs from the given file. The file is assumed to
