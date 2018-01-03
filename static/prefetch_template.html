@@ -1,0 +1,13 @@
+<html>
+	<head>
+		{{range .Prefetches}}
+			<link rel="prefetch" href="{{.}}"></link>
+		{{end}}
+	</head>
+	<body>
+		<script>
+			var dstPage = "{{.DstPage}}";
+			window.location.replace(dstPage);
+		</script>
+	</body>
+</html>
