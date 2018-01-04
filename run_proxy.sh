@@ -9,7 +9,7 @@ if [ "$#" -ne 4 ]; then
 fi
 
 echo "Starting proxy.go..."
-go run proxy/proxy.go -port=${proxy_port} -important-urls=${prefetch_urls} -request-order=${request_order} &> proxy.out &
+go run proxy/proxy.go -port=${proxy_port} -prefetch-urls=${prefetch_urls} -request-order=${request_order} &> proxy.out &
 
 echo "Starting prefetchwebserver.go..."
 go run prefetch_webserver/prefetchwebserver.go -port=${webserver_port} -prefetch-urls=${prefetch_urls} &> prefetchserver.out &

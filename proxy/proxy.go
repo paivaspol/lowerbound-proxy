@@ -14,7 +14,7 @@ import (
 
 func main() {
 	port := flag.Int("port", 8443, "The port this proxy should listen to")
-	importantURLFile := flag.String("important-urls", "./important", "The file containing the important URLs delimited by newline")
+	prefetchURLFile := flag.String("prefetch-urls", "./prefetch_urls", "The file containing the prefetch URLs delimited by newline")
 	verbose := flag.Bool("verbose", false, "Whether to verbosely log the proxy")
 	passthrough := flag.Bool("passthrough", false, "Whether to run this proxy as a passthrough proxy")
 	requestOrder := flag.String("request-order", "./request_order", "The file containing the order of the requests.")
@@ -22,7 +22,7 @@ func main() {
 
 	log.Printf(fmt.Sprintf("Starting proxy on %d\n", *port))
 
-	var importantURLs map[string]bool
+	var prefetchURLs map[string]bool
 	var err error
 	var resourceQueue *lowerboundproxy.ResourceQueue
 	if !*passthrough {
@@ -35,7 +35,7 @@ func main() {
 			resourceQueue.Cleanup()
 		}()
 
-		importantURLs, err = getImportantURLs(*importantURLFile)
+		prefetchURLs, err = getPrefetchURLs(*prefetchURLFile)
 		if err != nil {
 			log.Fatalf("failed to get important URLs: %v", err)
 		}
@@ -56,7 +56,9 @@ func main() {
 		log.Printf("[Response] req: %v respCode: %v", r.Request.URL, r.Status)
 		signalChan := make(chan bool)
 		priority := lowerboundproxy.Low
-		if _, ok := importantURLs[r.Request.URL.String()]; ok {
+
+		// Prefetch URLs are less important than ones that are not prefetched.
+		if _, ok := prefetchURLs[r.Request.URL.String()]; !ok {
 			priority = lowerboundproxy.High
 		}
 		resourceQueue.QueueRequest(priority, r.Request.URL.String(), signalChan)
@@ -69,21 +71,21 @@ func main() {
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", *port), proxyHandler))
 }
 
-// getImportantURLs reads the URLs from the given file. The file is assumed to
+// getPrefetchURLs reads the URLs from the given file. The file is assumed to
 // contain URLs separated by new line characters.
-func getImportantURLs(importantURLFile string) (map[string]bool, error) {
-	file, err := os.Open(importantURLFile)
+func getPrefetchURLs(prefetchURLFile string) (map[string]bool, error) {
+	file, err := os.Open(prefetchURLFile)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
-	importantURLs := make(map[string]bool)
+	prefetchURLs := make(map[string]bool)
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		importantURLs[scanner.Text()] = true
+		prefetchURLs[scanner.Text()] = true
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	return importantURLs, nil
+	return prefetchURLs, nil
 }
