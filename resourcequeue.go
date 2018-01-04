@@ -2,7 +2,10 @@
 package lowerboundproxy
 
 import (
+	"bufio"
 	"log"
+	"math"
+	"os"
 	"sync"
 )
 
@@ -26,18 +29,28 @@ type ResourceQueue struct {
 	nextRequestID     int
 	nextLowPriorityID int
 
+	requestOrderMutex sync.Mutex
+	requestOrder      map[string]int
+	curRequestPos     int
+
 	destroy chan bool
 }
 
 // NewResourceQueue creates a resource queue and starts a routine
 // where it will re-prioritize the requests.
-func NewResourceQueue() *ResourceQueue {
+func NewResourceQueue(requestOrderFile string) (*ResourceQueue, error) {
+	requestOrder, err := getRequestOrder(requestOrderFile)
+	if err != nil {
+		return nil, err
+	}
 	rq := &ResourceQueue{
 		highPriority:      []chan bool{},
 		lowPriority:       make(map[int]chan bool),
 		reqIDURLMap:       make(map[int]string),
 		nextLowPriorityID: 0,
 		nextRequestID:     0,
+		requestOrder:      requestOrder,
+		curRequestPos:     0,
 		destroy:           make(chan bool),
 	}
 	go func() {
@@ -50,6 +63,7 @@ func NewResourceQueue() *ResourceQueue {
 				if len(rq.highPriority) == 1 {
 					newHighPriority = []chan bool{}
 				} else {
+					// Remove the first element.
 					newHighPriority = rq.highPriority[1:]
 				}
 				rq.highPriority = newHighPriority
@@ -67,6 +81,7 @@ func NewResourceQueue() *ResourceQueue {
 					rq.lowPriMutex.Unlock()
 					continue
 				}
+				delete(rq.lowPriority, rq.nextLowPriorityID)
 				nextReqChan <- true
 				rq.nextLowPriorityID++
 				rq.lowPriMutex.Unlock()
@@ -80,7 +95,7 @@ func NewResourceQueue() *ResourceQueue {
 			}
 		}
 	}()
-	return rq
+	return rq, nil
 }
 
 // Cleanup cleans the existing state of this resource queue.
@@ -100,6 +115,12 @@ func (rq *ResourceQueue) Cleanup() {
 // QueueRequest places the request on to a queue.
 func (rq *ResourceQueue) QueueRequest(rp RequestPriority, url string, signalChan chan bool) {
 	log.Printf("[ResourceQueue] queuing: %v with Priority: %v", url, rp)
+	if position, ok := rq.requestOrder[url]; ok {
+		rq.requestOrderMutex.Lock()
+		rq.curRequestPos = int(math.Max(float64(rq.curRequestPos), float64(position)))
+		rq.reprioritize()
+		rq.requestOrderMutex.Unlock()
+	}
 	switch rp {
 	case High:
 		// Place this signal channel on the high priority queue.
@@ -113,5 +134,58 @@ func (rq *ResourceQueue) QueueRequest(rp RequestPriority, url string, signalChan
 		rq.lowPriority[reqID] = signalChan
 		rq.reqIDURLMap[reqID] = url
 		rq.lowPriMutex.Unlock()
+	}
+}
+
+// getRequestOrder parses the file from the given file name and returns a mapping of
+// URLs to the request order.
+func getRequestOrder(scheduleFile string) (map[string]int, error) {
+	file, err := os.Open(scheduleFile)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	requestOrder := make(map[string]int)
+	scanner := bufio.NewScanner(file)
+	counter := 0
+	for scanner.Scan() {
+		requestOrder[scanner.Text()] = counter
+		counter++
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return requestOrder, nil
+}
+
+// reprioritize moves resources from low priority to high priority. This only happens when
+// low priority resources supposed to already be discovered by the browser based on
+// a previously discovered schedule.
+func (rq *ResourceQueue) reprioritize() {
+	rq.lowPriMutex.Lock()
+	defer rq.lowPriMutex.Unlock()
+	moveSet := []int{}
+	for reqID, _ := range rq.lowPriority {
+		url, ok := rq.reqIDURLMap[reqID]
+		if !ok {
+			// For some reason, we cannot find the associated URL for this reqID.
+			// Proceed to the next URL.
+			continue
+		}
+		if requestOrder, ok := rq.requestOrder[url]; ok {
+			log.Printf("Reprioritizing: %v", url)
+			if requestOrder < rq.curRequestPos {
+				moveSet = append(moveSet, reqID)
+			}
+		}
+	}
+
+	rq.highPriMutex.Lock()
+	defer rq.highPriMutex.Unlock()
+	// Move the low priority channels.
+	for _, reqToMove := range moveSet {
+		rq.highPriority = append(rq.highPriority, rq.lowPriority[reqToMove])
+		delete(rq.lowPriority, reqToMove)
 	}
 }
