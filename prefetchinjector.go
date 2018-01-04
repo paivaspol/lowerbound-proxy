@@ -31,6 +31,7 @@ func NewPrefetchInjector(prefetches map[string]bool) (*PrefetchInjector, error) 
 
 // ServeHTTP handles the HTTP request.
 func (pi *PrefetchInjector) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
+	log.Printf("[PrefetchInjector] Serving: %v", r.URL.String())
 	dstPage := r.URL.Query().Get("dstPage")
 	log.Printf("DstPage: %v", dstPage)
 	prefetchesSlice := []string{}

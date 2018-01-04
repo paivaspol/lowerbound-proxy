@@ -4,6 +4,7 @@ package lowerboundproxy
 import (
 	"bufio"
 	"log"
+	"math"
 	"os"
 	"sync"
 )
@@ -62,6 +63,7 @@ func NewResourceQueue(requestOrderFile string) (*ResourceQueue, error) {
 				if len(rq.highPriority) == 1 {
 					newHighPriority = []chan bool{}
 				} else {
+					// Remove the first element.
 					newHighPriority = rq.highPriority[1:]
 				}
 				rq.highPriority = newHighPriority
@@ -79,6 +81,7 @@ func NewResourceQueue(requestOrderFile string) (*ResourceQueue, error) {
 					rq.lowPriMutex.Unlock()
 					continue
 				}
+				delete(rq.lowPriority, rq.nextLowPriorityID)
 				nextReqChan <- true
 				rq.nextLowPriorityID++
 				rq.lowPriMutex.Unlock()
@@ -114,7 +117,7 @@ func (rq *ResourceQueue) QueueRequest(rp RequestPriority, url string, signalChan
 	log.Printf("[ResourceQueue] queuing: %v with Priority: %v", url, rp)
 	if position, ok := rq.requestOrder[url]; ok {
 		rq.requestOrderMutex.Lock()
-		rq.curRequestPos = position
+		rq.curRequestPos = int(math.Max(float64(rq.curRequestPos), float64(position)))
 		rq.reprioritize()
 		rq.requestOrderMutex.Unlock()
 	}
@@ -171,6 +174,7 @@ func (rq *ResourceQueue) reprioritize() {
 			continue
 		}
 		if requestOrder, ok := rq.requestOrder[url]; ok {
+			log.Printf("Reprioritizing: %v", url)
 			if requestOrder < rq.curRequestPos {
 				moveSet = append(moveSet, reqID)
 			}

@@ -26,7 +26,11 @@ func main() {
 	var err error
 	var resourceQueue *lowerboundproxy.ResourceQueue
 	if !*passthrough {
-		resourceQueue = lowerboundproxy.NewResourceQueue(*requestOrder)
+		resourceQueue, err = lowerboundproxy.NewResourceQueue(*requestOrder)
+		if err != nil {
+			log.Fatalf("failed to get important URLs: %v", err)
+		}
+
 		defer func() {
 			resourceQueue.Cleanup()
 		}()
@@ -37,14 +41,11 @@ func main() {
 		}
 	}
 
-	proxyHandler, err := goproxy.NewProxyHttpServer()
-	if err != nil {
-		log.Fatalf("failed to create the proxy instance: %v", err)
-	}
+	proxyHandler := goproxy.NewProxyHttpServer()
 	proxyHandler.Verbose = *verbose
 	proxyHandler.OnRequest().HandleConnect(goproxy.AlwaysMitm)
 	proxyHandler.OnRequest().DoFunc(func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-		log.Printf("[In Req] req: %v", r)
+		log.Printf("[In Req] req: %v", r.URL.String())
 		return r, nil
 	})
 	proxyHandler.OnResponse().DoFunc(func(r *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
@@ -52,8 +53,7 @@ func main() {
 		if *passthrough {
 			return r
 		}
-
-		log.Printf("[In Response] req: %v", r.Request.URL)
+		log.Printf("[Response] req: %v respCode: %v", r.Request.URL, r.Status)
 		signalChan := make(chan bool)
 		priority := lowerboundproxy.Low
 		if _, ok := importantURLs[r.Request.URL.String()]; ok {
@@ -63,6 +63,7 @@ func main() {
 
 		// Block until we get a go from the queue.
 		<-signalChan
+		log.Printf("[Response] Completed req: %v", r.Request.URL)
 		return r
 	})
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", *port), proxyHandler))
