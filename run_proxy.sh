@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-proxy_port=$1
-webserver_port=$2
-prefetch_urls=$3
-request_order=$4
+proxy_dir=$1
+proxy_port=$2
+webserver_port=$3
+prefetch_urls=$4
+request_order=$5
 
-if [ "$#" -ne 4 ]; then
-	echo "Usage: ./run_proxy.sh [proxy_port] [webserver_port] [prefetch_urls] [request_order]"
+if [ "$#" -ne 5 ]; then
+	echo "Usage: ./run_proxy.sh [proxy_dir] [proxy_port] [webserver_port] [prefetch_urls] [request_order]"
+	exit 1
 fi
 
 echo "Starting proxy.go..."
-go run proxy/proxy.go -port=${proxy_port} -prefetch-urls=${prefetch_urls} -request-order=${request_order} &> proxy.out &
+go run ${proxy_dir}/proxy/proxy.go -port=${proxy_port} -prefetch-urls=${prefetch_urls} -request-order=${request_order} &> proxy.out &
 
 echo "Starting prefetchwebserver.go..."
-go run prefetch_webserver/prefetchwebserver.go -port=${webserver_port} -prefetch-urls=${prefetch_urls} &> prefetchserver.out &
+go run ${proxy_dir}/prefetch_webserver/prefetchwebserver.go -port=${webserver_port} -prefetch-urls=${prefetch_urls} &> prefetchserver.out &
