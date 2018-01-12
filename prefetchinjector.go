@@ -14,11 +14,11 @@ const htmlTemplateFile = "static/prefetch_template.html"
 // response and redirects to the destination page.
 type PrefetchInjector struct {
 	htmlTemplate *template.Template
-	prefetches   map[string]bool
+	prefetches   []string
 }
 
 // NewPrefetchInjector creates a prefetch injector object.
-func NewPrefetchInjector(prefetches map[string]bool) (*PrefetchInjector, error) {
+func NewPrefetchInjector(prefetches []string) (*PrefetchInjector, error) {
 	htmlTemplate, err := Asset(htmlTemplateFile)
 	if err != nil {
 		return nil, err
@@ -34,17 +34,13 @@ func (pi *PrefetchInjector) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	log.Printf("[PrefetchInjector] Serving: %v", r.URL.String())
 	dstPage := r.URL.Query().Get("dstPage")
 	log.Printf("DstPage: %v", dstPage)
-	prefetchesSlice := []string{}
-	for url, _ := range pi.prefetches {
-		prefetchesSlice = append(prefetchesSlice, url)
-	}
 	// Generate the JS stub.
 	templateData := struct {
 		DstPage    template.JS
 		Prefetches []string
 	}{
 		DstPage:    template.JS(dstPage),
-		Prefetches: prefetchesSlice,
+		Prefetches: pi.prefetches,
 	}
 
 	// (2) Return with the templated response.

@@ -31,16 +31,16 @@ func main() {
 
 // getPrefetchURLs reads the URLs from the given file. The file is assumed to
 // contain URLs separated by new line characters.
-func getPrefetchURLs(prefetchURLFile string) (map[string]bool, error) {
+func getPrefetchURLs(prefetchURLFile string) ([]string, error) {
 	file, err := os.Open(prefetchURLFile)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
-	prefetchURLs := make(map[string]bool)
+	prefetchURLs := []string{}
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		prefetchURLs[scanner.Text()] = true
+		prefetchURLs = append(prefetchURLs, scanner.Text())
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
