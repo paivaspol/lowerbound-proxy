@@ -22,11 +22,11 @@ func main() {
 
 	log.Printf(fmt.Sprintf("Starting proxy on %d\n", *port))
 
-	var prefetchURLs map[string]bool
-	var err error
-	var resourceQueue *lowerboundproxy.ResourceQueue
+	proxyHandler := goproxy.NewProxyHttpServer()
+	proxyHandler.OnRequest().HandleConnect(goproxy.AlwaysMitm)
+
 	if !*passthrough {
-		resourceQueue, err = lowerboundproxy.NewResourceQueue(*requestOrder)
+		resourceQueue, err := lowerboundproxy.NewResourceQueue(*requestOrder)
 		if err != nil {
 			log.Fatalf("failed to get important URLs: %v", err)
 		}
@@ -35,39 +35,43 @@ func main() {
 			resourceQueue.Cleanup()
 		}()
 
-		prefetchURLs, err = getPrefetchURLs(*prefetchURLFile)
+		prefetchURLs, err := getPrefetchURLs(*prefetchURLFile)
 		if err != nil {
 			log.Fatalf("failed to get important URLs: %v", err)
 		}
+
+		proxyHandler.OnRequest().DoFunc(func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+			if *verbose {
+				log.Printf("[Request] url: %v", r.URL.String())
+			}
+			return r, nil
+		})
+		proxyHandler.OnResponse().DoFunc(func(r *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
+			// This is a passthrough proxy. Just return the response.
+			if *passthrough {
+				return r
+			}
+			if *verbose {
+				log.Printf("[Response] url: %v respCode: %v", r.Request.URL, r.Status)
+			}
+			signalChan := make(chan bool)
+			priority := lowerboundproxy.Low
+
+			// Prefetch URLs are less important than ones that are not prefetched.
+			if _, ok := prefetchURLs[r.Request.URL.String()]; !ok {
+				priority = lowerboundproxy.High
+			}
+			resourceQueue.QueueRequest(priority, r.Request.URL.String(), signalChan)
+
+			// Block until we get a go from the queue.
+			<-signalChan
+			if *verbose {
+				log.Printf("[Response] Completed url: %v", r.Request.URL)
+			}
+			return r
+		})
 	}
 
-	proxyHandler := goproxy.NewProxyHttpServer()
-	proxyHandler.Verbose = *verbose
-	proxyHandler.OnRequest().HandleConnect(goproxy.AlwaysMitm)
-	proxyHandler.OnRequest().DoFunc(func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-		log.Printf("[In Req] req: %v", r.URL.String())
-		return r, nil
-	})
-	proxyHandler.OnResponse().DoFunc(func(r *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
-		// This is a passthrough proxy. Just return the response.
-		if *passthrough {
-			return r
-		}
-		log.Printf("[Response] req: %v respCode: %v", r.Request.URL, r.Status)
-		signalChan := make(chan bool)
-		priority := lowerboundproxy.Low
-
-		// Prefetch URLs are less important than ones that are not prefetched.
-		if _, ok := prefetchURLs[r.Request.URL.String()]; !ok {
-			priority = lowerboundproxy.High
-		}
-		resourceQueue.QueueRequest(priority, r.Request.URL.String(), signalChan)
-
-		// Block until we get a go from the queue.
-		<-signalChan
-		log.Printf("[Response] Completed req: %v", r.Request.URL)
-		return r
-	})
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", *port), proxyHandler))
 }
 
